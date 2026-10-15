@@ -1,0 +1,46 @@
+# Build directories
+build/
+build-*/
+_build_fresh/
+cmake-build-*/
+
+# Qt Creator
+.qtcreator/
+*.user
+*.user.*
+CMakeLists.txt.user*
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake.stamp
+
+# Binaries and objects
+*.o
+*.obj
+*.so
+*.a
+*.dll
+*.exe
+ConversorGUI
+ConversorGUI.exe
+
+# Qt generated
+*_autogen/
+moc_*.cpp
+moc_*.h
+ui_*.h
+qrc_*.cpp
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
