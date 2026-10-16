@@ -4,6 +4,13 @@
 #include <QMessageBox>
 #include <QFileInfo>
 #include <QIcon>
+#include <QProcess>
+#include <QTimer>
+
+namespace {
+constexpr int WINDOW_WIDTH = 650;
+constexpr int ERROR_LOG_HEIGHT = 200;
+}
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -13,10 +20,14 @@ MainWindow::MainWindow(QWidget *parent)
     ui->setupUi(this);
     setWindowTitle("Conversor");
     setWindowIcon(QIcon(":/resources/icon.png"));
-    QIcon testIcon(":/resources/icon.png");
-    qDebug() << "DEBUG: icono isNull =" << testIcon.isNull();
-    qDebug() << "DEBUG: tamaños disponibles =" << testIcon.availableSizes();
-    setWindowIcon(testIcon);
+
+    ui->plainTextEdit->setVisible(false);
+    ui->plainTextEdit->setMinimumHeight(150);
+
+    ui->progressBar->setRange(0, 100);
+    ui->progressBar->setTextVisible(true);
+    ui->progressBar->setFormat("%p%");
+    ui->progressBar->setValue(0);
 
     //Connect the signals with the slots
     connect(ffmpeg, &QProcess::readyReadStandardOutput,
@@ -25,6 +36,30 @@ MainWindow::MainWindow(QWidget *parent)
             this, &MainWindow::onffmpegError);
     connect(ffmpeg, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this, &MainWindow::onffmpegFinished);
+
+    QTimer::singleShot(0, this, [this]() {
+        adjustSize();
+        m_compactHeight = height();
+        setFixedSize(WINDOW_WIDTH, m_compactHeight);
+    });
+}
+
+double MainWindow::getDuration(const QString &file){
+    QProcess probe;
+    probe.start("ffprobe", {
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", file
+    });
+    probe.waitForFinished(5000);
+    if (probe.exitCode() != 0){
+        return 0.0;
+    }
+
+    QString out = QString::fromLocal8Bit(probe.readAllStandardOutput()).trimmed();
+    bool ok = false;
+    double duration =out.toDouble(&ok);
+    return ok ? duration : 0.0;
 }
 
 MainWindow::~MainWindow()
@@ -56,35 +91,82 @@ void MainWindow::on_convertButton_clicked()
     }
 
     QFileInfo info(input);
-    QString output = info.absolutePath() + "/" + info.completeBaseName() + "." + format;
+    m_outputPath = info.absolutePath() + "/" + info.completeBaseName() + "." + format;
+    m_errorBuffer.clear();
+    m_stdoutBuffer.clear();
+
+    m_duration = getDuration(input);
 
     ui->plainTextEdit->clear();
-    ui->plainTextEdit->appendPlainText("Converting " + input + "->" + output);
+    ui->plainTextEdit->appendPlainText("Converting " + input + "-> " + m_outputPath);
+    ui->lineInput->setEnabled(false);
+    ui->lineFormat->setEnabled(false);
+    ui->selectButton->setEnabled(false);
     ui->convertButton->setEnabled(false);
 
     QStringList args;
-    args << "-y" << "-i" << input << output;
+    args << "-hide_banner" << "-nostats" << "-progress" << "pipe:1" << "-y" << "-i" << input << m_outputPath;
 
     ffmpeg->start("ffmpeg", args);
-
+    ui->plainTextEdit->setVisible(false);
+    setFixedSize(width(), m_compactHeight);
 }
 
 void MainWindow::onffmpegOutput()
 {
-    ui->plainTextEdit->insertPlainText(QString::fromLocal8Bit(ffmpeg->readAllStandardOutput()));
+    m_stdoutBuffer += QString::fromLocal8Bit(ffmpeg->readAllStandardOutput());
+
+    int pos;
+    while ((pos = m_stdoutBuffer.indexOf('\n')) != -1) {
+        QString line = m_stdoutBuffer.left(pos).trimmed();
+        m_stdoutBuffer.remove(0, pos + 1);
+
+        if (line.startsWith("out_time_us=")) {
+            bool ok = false;
+            qint64 us = line.mid(12).toLongLong(&ok);
+            if (!ok || m_duration <= 0.0)
+                continue;
+
+            double seconds = us / 1000000.0;
+            double percent = (seconds / m_duration) * 100.0;
+            if (percent < 0) percent = 0;
+            if (percent > 100) percent = 100;
+
+            ui->progressBar->setValue(static_cast<int>(percent));
+            ui->labelStatus->setText(
+                QString("Converting... %1%").arg(static_cast<int>(percent))
+            );
+        }
+    }
 }
 
 void MainWindow::onffmpegError()
 {
-    ui->plainTextEdit->insertPlainText(QString::fromLocal8Bit(ffmpeg->readAllStandardError()));
+    m_errorBuffer += QString::fromLocal8Bit(ffmpeg->readAllStandardError());
 }
 
 void MainWindow::onffmpegFinished(int exitCode, QProcess::ExitStatus status)
 {
+    m_errorBuffer += QString::fromLocal8Bit(ffmpeg->readAllStandardError());
+    m_stdoutBuffer += QString::fromLocal8Bit(ffmpeg->readAllStandardOutput());
+
+    ui->lineInput->setEnabled(true);
+    ui->lineFormat->setEnabled(true);
+    ui->selectButton->setEnabled(true);
     ui->convertButton->setEnabled(true);
 
-    if (status == QProcess::NormalExit && exitCode == 0)
-        ui->plainTextEdit->appendPlainText("\n Conversion completed.");
-    else
-        ui->plainTextEdit->appendPlainText("\n ffmpeg finalized with an error (code " + QString::number(exitCode) + ").");
+    if (status == QProcess::NormalExit && exitCode == 0) {
+        ui->progressBar->setValue(100);
+        ui->labelStatus->setText("Conversion completed.");
+        ui->plainTextEdit->setVisible(false);
+    } else {
+        ui->progressBar->setValue(0);
+        ui->labelStatus->setText("Failed to convert.");
+        ui->plainTextEdit->setVisible(true);
+        setFixedSize(WINDOW_WIDTH, m_compactHeight + ERROR_LOG_HEIGHT);
+        ui->plainTextEdit->setPlainText(
+            "Error (código " + QString::number(exitCode) + ").\n\n"
+            "--- Detalles de ffmpeg ---\n" + m_errorBuffer
+        );
+    }
 }

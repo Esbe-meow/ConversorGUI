@@ -28,5 +28,11 @@ private slots:
 private:
     Ui::MainWindow *ui;
     QProcess *ffmpeg;
+    QString m_errorBuffer;                      //ffmpeg stderr buffer
+    QString m_outputPath;
+    QString m_stdoutBuffer;                     //progress for buffer
+    double  m_duration = 0.0;                   //input length in seconds
+    double getDuration(const QString &file);
+    int m_compactHeight = 0;
 };
 #endif // MAINWINDOW_H
