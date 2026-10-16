@@ -44,9 +44,21 @@ MainWindow::MainWindow(QWidget *parent)
     });
 }
 
+static QString ffmpegPath(const QString &binary)
+{
+    QString local = QCoreApplication::applicationDirPath() + "/" + binary;
+#ifdef Q_OS_WIN
+    local += ".exe";
+#endif
+    if (QFile::exists(local))
+        return local;
+
+    return binary;
+}
+
 double MainWindow::getDuration(const QString &file){
     QProcess probe;
-    probe.start("ffprobe", {
+    probe.start(ffmpegPath("ffprobe"), {
         "-v", "error",
         "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", file
@@ -107,7 +119,7 @@ void MainWindow::on_convertButton_clicked()
     QStringList args;
     args << "-hide_banner" << "-nostats" << "-progress" << "pipe:1" << "-y" << "-i" << input << m_outputPath;
 
-    ffmpeg->start("ffmpeg", args);
+    ffmpeg->start(ffmpegPath("ffmpeg"), args);
     ui->plainTextEdit->setVisible(false);
     setFixedSize(width(), m_compactHeight);
 }
@@ -165,8 +177,8 @@ void MainWindow::onffmpegFinished(int exitCode, QProcess::ExitStatus status)
         ui->plainTextEdit->setVisible(true);
         setFixedSize(WINDOW_WIDTH, m_compactHeight + ERROR_LOG_HEIGHT);
         ui->plainTextEdit->setPlainText(
-            "Error (código " + QString::number(exitCode) + ").\n\n"
-            "--- Detalles de ffmpeg ---\n" + m_errorBuffer
+            "Error (code " + QString::number(exitCode) + ").\n\n"
+            "--- ffmpeg details ---\n" + m_errorBuffer
         );
     }
 }
