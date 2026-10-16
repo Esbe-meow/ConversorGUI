@@ -3,7 +3,7 @@ project(ConversorGUI LANGUAGES CXX)
 
 include(GNUInstallDirs)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Widgets)
+find_package(Qt6 6.2 REQUIRED COMPONENTS Core Widgets)
 
 qt_standard_project_setup()
 
