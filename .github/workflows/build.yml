@@ -1,0 +1,85 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.0'
+          arch: 'win64_msvc2022_64'
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Download ffmpeg
+        run: |
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile "ffmpeg.zip"
+          Expand-Archive -Path "ffmpeg.zip" -DestinationPath "ffmpeg"
+
+      - name: Create package
+        run: |
+          New-Item -ItemType Directory -Path "package"
+          Copy-Item -Path "build\Release\ConversorGUI.exe" -Destination "package\"
+          windeployqt --release --dir package "package\ConversorGUI.exe"
+          $ffmpegExe = Get-ChildItem -Path ffmpeg -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
+          $ffprobeExe = Get-ChildItem -Path ffmpeg -Recurse -Filter "ffprobe.exe" | Select-Object -First 1
+          Copy-Item $ffmpegExe.FullName -Destination "package\"
+          Copy-Item $ffprobeExe.FullName -Destination "package\"
+          Compress-Archive -Path "package\*" -DestinationPath "ConversorGUI-Windows.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ConversorGUI-Windows
+          path: ConversorGUI-Windows.zip
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qt6-base-dev qt6-tools-dev cmake build-essential ffmpeg
+
+      - name: Configure and build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+
+      - name: Create package
+        run: tar -czvf ConversorGUI-Linux.tar.gz -C build ConversorGUI
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ConversorGUI-Linux
+          path: ConversorGUI-Linux.tar.gz
+
+  create-release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ConversorGUI-Windows/ConversorGUI-Windows.zip
+            ConversorGUI-Linux/ConversorGUI-Linux.tar.gz
