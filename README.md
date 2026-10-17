@@ -24,7 +24,7 @@ On Arch Linux:
 
 ## Building
 
-    git clone https://github.com/TU_USUARIO/ConversorGUI.git
+    git clone https://github.com/Esbe-meow/ConversorGUI.git
     cd ConversorGUI
     cmake -B build -DCMAKE_BUILD_TYPE=Release
     cmake --build build --parallel
